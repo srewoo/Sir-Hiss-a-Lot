@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sir Hiss-a-Lot — Full Screen Snake</title>
+<style>
+  :root {
+    --bg: #050a08;
+    --panel: rgba(6, 17, 12, 0.85);
+    --panel-border: rgba(120, 220, 170, 0.25);
+    --ink: #e3faee;
+    --muted: #82b29c;
+    --accent: #5ef2a8;
+    --accent-glow: rgba(94, 242, 168, 0.45);
+    --gold: #ffd76b;
+    --gold-glow: rgba(255, 215, 107, 0.5);
+    --amethyst: #c084fc;
+    --danger: #ff6b52;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%; margin: 0; padding: 0;
+    background: var(--bg); color: var(--ink);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    overflow: hidden; -webkit-user-select: none; user-select: none;
+    touch-action: none;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+  }
+  canvas {
+    display: block; width: 100%; height: 100%;
+    cursor: crosshair;
+  }
+
+  /* Top HUD */
+  .hud {
+    position: absolute; top: 12px; left: 14px; right: 14px;
+    display: flex; gap: 10px; align-items: flex-start;
+    justify-content: space-between; pointer-events: none;
+    z-index: 10;
+  }
+  .hud-group {
+    display: flex; gap: 8px; flex-wrap: wrap; pointer-events: auto;
+    align-items: center;
+  }
+  .chip {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px; padding: 6px 13px;
+    backdrop-filter: blur(12px);
+    font-size: 10px; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--muted);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+  }
+  .chip b {
+    display: block; font-size: 20px; letter-spacing: .04em;
+    color: var(--ink); margin-top: 1px; font-weight: 700;
+  }
+
+  /* Dynamic Speed Indicator */
+  .speed-chip b {
+    color: var(--accent);
+    text-shadow: 0 0 10px var(--accent-glow);
+  }
+  .speed-chip small {
+    font-size: 10px; font-weight: normal; color: var(--muted); margin-left: 2px;
+  }
+
+  /* Combo Multiplier Pill */
+  .combo-chip {
+    background: linear-gradient(135deg, rgba(255, 215, 107, 0.18), rgba(94, 242, 168, 0.22));
+    border: 1px solid var(--gold);
+    color: var(--gold);
+    box-shadow: 0 0 20px var(--gold-glow);
+    transition: transform .15s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .combo-chip.pop { transform: scale(1.18); }
+  .combo-bar-wrap {
+    width: 65px; height: 4px; background: rgba(255,255,255,0.1);
+    border-radius: 2px; margin-top: 4px; overflow: hidden;
+  }
+  .combo-bar {
+    height: 100%; width: 0%; background: var(--gold);
+    border-radius: 2px; transition: width .05s linear;
+  }
+
+  /* Magnet Buff Pill */
+  .buff-chip {
+    background: rgba(192, 132, 252, 0.2);
+    border: 1px solid var(--amethyst);
+    color: #e9d5ff; font-weight: 700;
+    display: none;
+    animation: pulseGlow 1s infinite alternate;
+  }
+  .buff-chip.show { display: block; }
+  @keyframes pulseGlow {
+    from { box-shadow: 0 0 8px rgba(192,132,252,0.3); }
+    to { box-shadow: 0 0 20px rgba(192,132,252,0.8); }
+  }
+
+  .btn-icon {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px; padding: 7px 12px;
+    backdrop-filter: blur(10px);
+    color: var(--ink); font: inherit; font-size: 11px;
+    cursor: pointer; letter-spacing: .08em;
+    display: flex; align-items: center; gap: 6px;
+    transition: all .15s ease;
+  }
+  .btn-icon:hover {
+    background: rgba(120, 220, 170, 0.2);
+    border-color: var(--accent);
+  }
+
+  /* Visible On-Screen Controller */
+  #onScreenControls {
+    position: absolute; bottom: 20px; left: 16px; right: 16px;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    pointer-events: none; z-index: 15;
+    transition: opacity .2s ease;
+  }
+  #onScreenControls.hide { display: none; }
+
+  .ctrl-cluster {
+    pointer-events: auto;
+    display: flex; gap: 8px;
+    background: rgba(6, 16, 12, 0.72);
+    border: 1px solid var(--panel-border);
+    border-radius: 20px; padding: 10px;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+
+  .dpad {
+    display: grid;
+    grid-template-columns: repeat(3, 46px);
+    grid-template-rows: repeat(3, 46px);
+    gap: 4px;
+  }
+  .dpad-btn {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px; color: var(--ink);
+    font-size: 18px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    transition: all .1s ease;
+  }
+  .dpad-btn:active, .dpad-btn.pressed {
+    background: var(--accent); color: #052015;
+    transform: scale(0.92);
+    box-shadow: 0 0 16px var(--accent-glow);
+  }
+  .dpad-up    { grid-column: 2; grid-row: 1; }
+  .dpad-left  { grid-column: 1; grid-row: 2; }
+  .dpad-center{ grid-column: 2; grid-row: 2; font-size: 9px; color: var(--muted); pointer-events: none; }
+  .dpad-right { grid-column: 3; grid-row: 2; }
+  .dpad-down  { grid-column: 2; grid-row: 3; }
+
+  .action-cluster {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .action-row { display: flex; gap: 8px; }
+  .action-btn {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px; color: var(--ink);
+    font: inherit; font-size: 12px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase;
+    padding: 13px 18px; display: flex; align-items: center; justify-content: center;
+    gap: 6px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    transition: all .1s ease; min-width: 80px; min-height: 48px;
+  }
+  .action-btn.sprint {
+    background: rgba(94, 242, 168, 0.18);
+    border-color: var(--accent); color: var(--accent);
+  }
+  .action-btn:active, .action-btn.pressed {
+    background: var(--accent); color: #052015;
+    transform: scale(0.94);
+    box-shadow: 0 0 18px var(--accent-glow);
+  }
+
+  /* Overlay Modal */
+  #overlay {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    background: radial-gradient(65% 65% at 50% 48%, rgba(4, 12, 9, 0.78), rgba(2, 7, 5, 0.96));
+    backdrop-filter: blur(8px);
+    z-index: 25; transition: opacity .25s ease;
+  }
+  #overlay.hide { display: none; }
+  .card {
+    text-align: center; max-width: 580px; width: 92%;
+    padding: 30px 28px; border-radius: 24px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    box-shadow: 0 24px 70px rgba(0,0,0,0.7);
+  }
+  .card h1 {
+    margin: 0 0 4px 0; font-size: 48px; letter-spacing: .22em;
+    color: var(--accent); text-shadow: 0 0 40px var(--accent-glow);
+  }
+  .card p.desc {
+    color: var(--muted); line-height: 1.65; font-size: 13px;
+    letter-spacing: .05em; margin: 10px 0 18px 0;
+  }
+  kbd {
+    background: rgba(94, 242, 168, 0.12); border: 1px solid var(--panel-border);
+    border-radius: 6px; padding: 2px 7px; color: var(--ink); font-size: 11px;
+  }
+
+  /* Settings Grid */
+  .settings-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    margin: 16px 0 22px 0; text-align: left;
+  }
+  .setting-box {
+    background: rgba(255,255,255,0.03); border: 1px solid var(--panel-border);
+    border-radius: 12px; padding: 10px 12px;
+  }
+  .setting-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .15em;
+    color: var(--muted); margin-bottom: 6px;
+  }
+  .setting-options {
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }
+  .opt-btn {
+    flex: 1; min-width: 50px; padding: 6px 4px; font: inherit; font-size: 11px;
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    color: var(--muted); cursor: pointer; text-align: center;
+    transition: all .15s ease;
+  }
+  .opt-btn.active {
+    background: rgba(94,242,168,0.2);
+    border-color: var(--accent);
+    color: var(--ink); font-weight: 700;
+    box-shadow: 0 0 12px rgba(94,242,168,0.25);
+  }
+
+  .btn-play {
+    pointer-events: auto; cursor: pointer; background: var(--accent);
+    color: #052015; border: 0; border-radius: 999px;
+    padding: 14px 48px; font: inherit; font-size: 14px;
+    font-weight: 700; letter-spacing: .2em; text-transform: uppercase;
+    box-shadow: 0 10px 40px var(--accent-glow);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .btn-play:hover {
+    transform: scale(1.03);
+    box-shadow: 0 14px 45px rgba(94, 242, 168, 0.5);
+  }
+  .btn-play:active { transform: translateY(1px); }
+
+  .hint {
+    position: absolute; bottom: 8px; left: 0; right: 0; text-align: center;
+    font-size: 10px; letter-spacing: .16em; color: var(--muted); opacity: .7;
+    pointer-events: none; z-index: 10;
+  }
+  @media(max-width: 650px){
+    .card h1 { font-size: 34px; }
+    .settings-grid { grid-template-columns: 1fr; }
+    #onScreenControls { bottom: 12px; left: 8px; right: 8px; }
+    .dpad { grid-template-columns: repeat(3, 40px); grid-template-rows: repeat(3, 40px); }
+  }
+
+  /* Shield buff chip + stats strip */
+  .shield-chip { border-color: rgba(126,200,255,0.55); color: #bfe6ff; }
+  #statsStrip {
+    display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: center;
+    margin: 14px 0 4px; font-size: 10px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  #statsStrip b { color: var(--ink); font-weight: 700; }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .001s !important; transition-duration: .001s !important; }
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c" tabindex="0"></canvas>
+
+  <!-- Top Heads Up Display -->
+  <div class="hud">
+    <div class="hud-group">
+      <div class="chip">Score<b id="score">0</b></div>
+      <div class="chip speed-chip">Speed<b id="speedChip">175<small>px/s</small></b></div>
+      <div class="chip combo-chip" id="comboBox">
+        <span id="comboLabel">COMBO x1</span>
+        <div class="combo-bar-wrap"><div class="combo-bar" id="comboBar"></div></div>
+      </div>
+      <div class="chip buff-chip" id="buffBox">🧲 MAGNET <span id="buffSec">5s</span></div>
+      <div class="chip buff-chip shield-chip" id="shieldBox">🛡️ SCALE WARD</div>
+    </div>
+    <div class="hud-group">
+      <div class="chip">Length<b id="len">0</b></div>
+      <div class="chip">Level<b id="levelChip">1</b></div>
+      <div class="chip">Best<b id="best">0</b></div>
+      <button class="btn-icon" id="obsToggleBtn" title="Obstacles Density">🪨 Rocks: ON</button>
+      <button class="btn-icon" id="ctrlToggleBtn" title="Toggle On-Screen Buttons">🎮 Pad: ON</button>
+      <button class="btn-icon" id="modeToggleBtn" title="Controls Style">🕹️ 4-Way</button>
+      <button class="btn-icon" id="soundBtn" title="Toggle Sound">🔊 SFX: ON</button>
+      <button class="btn-icon" id="diffBtn" title="Difficulty">🌡️ Medium</button>
+      <button class="btn-icon" id="fsBtn" title="Fullscreen">⛶ [F]</button>
+      <button class="btn-icon" id="pauseBtn" title="Pause Game">⏸ [P]</button>
+    </div>
+  </div>
+
+  <!-- On-Screen Virtual Touch Controller -->
+  <div id="onScreenControls">
+    <!-- 4-Way D-Pad -->
+    <div class="ctrl-cluster">
+      <div class="dpad">
+        <button class="dpad-btn dpad-up" id="btnUp" title="Up">▲</button>
+        <button class="dpad-btn dpad-left" id="btnLeft" title="Left">◀</button>
+        <div class="dpad-btn dpad-center">PAD</div>
+        <button class="dpad-btn dpad-right" id="btnRight" title="Right">▶</button>
+        <button class="dpad-btn dpad-down" id="btnDown" title="Down">▼</button>
+      </div>
+    </div>
+
+    <!-- Steer & Sprint -->
+    <div class="ctrl-cluster action-cluster">
+      <div class="action-row">
+        <button class="action-btn" id="btnSteerLeft" title="Steer Left">◀ Turn</button>
+        <button class="action-btn" id="btnSteerRight" title="Steer Right">Turn ▶</button>
+      </div>
+      <div class="action-row">
+        <button class="action-btn sprint" id="btnSprint" title="Hold to Sprint">⚡ Sprint</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Menu / Game Over Modal -->
+  <div id="overlay">
+    <div class="card">
+      <h1 id="title">SIR HISS-A-LOT</h1>
+      <p class="desc" id="sub">
+        <b>Arcade Mechanics &amp; Obstacles:</b><br>
+        • <b>Speed scales up</b> as your snake grows longer — feel the adrenaline rush!<br>
+        • Dodge ancient <b>Runic Monoliths &amp; Stones (🪨)</b> scattered in the arena.<br>
+        • Chain apples quickly for <b>Combos (2x · 3x · 5x)</b> &amp; hunt <b>Golden Apples (★)</b>, <b>Magnets (🧲)</b> and <b>Scale Wards (🛡)</b> — a ward eats one fatal hit.<br>
+        • <b>Level up</b> every 5 apples: faster snake, one more monolith in the arena.<br>
+        • Steer with <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> / <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or Touch Buttons &nbsp;·&nbsp; <kbd>F</kbd> Fullscreen &nbsp;·&nbsp; <kbd>P</kbd> Pause &nbsp;·&nbsp; <kbd>R</kbd> Restart.
+      </p>
+
+      <div class="settings-grid">
+        <div class="setting-box">
+          <div class="setting-label">Difficulty</div>
+          <div class="setting-options">
+            <button class="opt-btn" data-diff="easy">Easy</button>
+            <button class="opt-btn active" data-diff="normal">Medium</button>
+            <button class="opt-btn" data-diff="hard">Difficult</button>
+          </div>
+        </div>
+        <div class="setting-box">
+          <div class="setting-label">Steering Scheme</div>
+          <div class="setting-options">
+            <button class="opt-btn active" data-scheme="cardinal">4-Way Arrows</button>
+            <button class="opt-btn" data-scheme="slither">Rotational</button>
+            <button class="opt-btn" data-scheme="mouse">Mouse Follow</button>
+          </div>
+        </div>
+        <div class="setting-box">
+          <div class="setting-label">Obstacles</div>
+          <div class="setting-options">
+            <button class="opt-btn active" data-obs="standard">Standard (6)</button>
+            <button class="opt-btn" data-obs="dense">Dense (10)</button>
+            <button class="opt-btn" data-obs="none">None</button>
+          </div>
+        </div>
+        <div class="setting-box">
+          <div class="setting-label">Wall Physics</div>
+          <div class="setting-options">
+            <button class="opt-btn active" data-mode="wrap">Wrap Walls</button>
+            <button class="opt-btn" data-mode="classic">Classic Wall</button>
+          </div>
+        </div>
+        <div class="setting-box">
+          <div class="setting-label">Snake Species</div>
+          <div class="setting-options">
+            <button class="opt-btn active" data-skin="green">Emerald Viper</button>
+            <button class="opt-btn" data-skin="cyan">Azure Cobra</button>
+            <button class="opt-btn" data-skin="ruby">Ruby Pit</button>
+            <button class="opt-btn" data-skin="gold">Golden Python</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="statsStrip"></div>
+      <button class="btn-play" id="playBtn">Play Now</button>
+    </div>
+  </div>
+
+  <div class="hint" id="footerHint">[F] FULLSCREEN · GROW TO GO FASTER · DODGE MONOLITHS · CHAIN COMBOS</div>
+</div>
+
+<script src="game.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# build output — regenerate with ./tools/build.sh
+dist/
+
+# scratch from browser tooling
+.playwright-mcp/
+.DS_Store
+store/
